@@ -6,7 +6,6 @@ import android.os.Bundle
 import android.graphics.Color
 import android.graphics.Typeface
 import android.view.View
-import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
 import android.content.Context
 import android.widget.Button
@@ -349,6 +348,7 @@ class MainActivity : Activity() {
         }
 
         val nested = result.optJSONObject("data")
+
         if (nested != null) {
             for (key in candidates) {
                 val value = nested.optString(key, "")
@@ -666,7 +666,9 @@ class MainActivity : Activity() {
 
         if (items.length() == 0) {
             val emptyText = TextView(this).apply {
-                text = "अभी Queue खाली है।\nनई स्क्रिप्ट बनाने के लिए ऊपर बटन दबाएँ।"
+                text =
+                    "अभी Queue खाली है।\n" +
+                    "नई स्क्रिप्ट बनाने के लिए ऊपर बटन दबाएँ।"
                 textSize = 16f
                 setTextColor(Color.DKGRAY)
                 setPadding(8, 16, 8, 16)
@@ -825,12 +827,15 @@ class MainActivity : Activity() {
             .setItems(actions) { _, index ->
                 when (index) {
                     0 -> reviewScript(item)
+
                     1 -> reviewScriptWithAction(
                         item,
-                        "approve",
+                        "approved",
                         ""
                     )
+
                     2 -> showRevisionDialog(item)
+
                     3 -> confirmReject(item)
                 }
             }
@@ -839,7 +844,10 @@ class MainActivity : Activity() {
     }
 
     private fun reviewScript(item: JSONObject) {
-        reviewScriptWithAction(item, "review", "")
+        // Review बटन स्क्रिप्ट को pending ही रखता है।
+        // वास्तविक समीक्षा रिकॉर्ड करने के लिए Worker में
+        // अलग review status होना आवश्यक होगा।
+        reviewScriptWithAction(item, "pending", "")
     }
 
     private fun showRevisionDialog(item: JSONObject) {
@@ -864,7 +872,7 @@ class MainActivity : Activity() {
                 } else {
                     reviewScriptWithAction(
                         item,
-                        "revise",
+                        "revision_requested",
                         instruction
                     )
                 }
@@ -880,15 +888,19 @@ class MainActivity : Activity() {
             )
             .setNegativeButton("नहीं", null)
             .setPositiveButton("हाँ, Reject करें") { _, _ ->
-                reviewScriptWithAction(item, "reject", "")
+                reviewScriptWithAction(
+                    item,
+                    "rejected",
+                    ""
+                )
             }
             .show()
     }
 
     private fun reviewScriptWithAction(
         item: JSONObject,
-        action: String,
-        instructions: String
+        status: String,
+        note: String
     ) {
         val id = item.optString(
             "id",
@@ -906,9 +918,11 @@ class MainActivity : Activity() {
             try {
                 val body = JSONObject().apply {
                     put("id", id)
-                    put("action", action)
-                    put("instructions", instructions)
-                    put("feedback", instructions)
+                    put("status", status)
+
+                    if (note.isNotBlank()) {
+                        put("note", note.take(2000))
+                    }
                 }
 
                 val result = request(
