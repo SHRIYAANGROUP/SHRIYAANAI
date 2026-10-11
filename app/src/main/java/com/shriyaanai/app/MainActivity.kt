@@ -26,578 +26,48 @@ import kotlin.concurrent.thread
 
 class MainActivity : Activity() {
 
+    private lateinit var rootLayout: LinearLayout
+    private lateinit var chatArea: LinearLayout
+    private lateinit var chatScroll: ScrollView
+    private lateinit var chatInput: EditText
+    private lateinit var studioQueue: LinearLayout
+
     private val baseUrl =
         "https://shriyaan-ai-api.tt6914794.workers.dev"
 
-    private lateinit var root: LinearLayout
-    private lateinit var content: LinearLayout
-
     private val prefs by lazy {
-        getSharedPreferences("shriyaan_chat", Context.MODE_PRIVATE)
+        getSharedPreferences("shriyaan_preferences", MODE_PRIVATE)
     }
-
-    private val chatHistory = mutableListOf<Pair<String, String>>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        window.statusBarColor = Color.rgb(18, 24, 45)
-        window.navigationBarColor = Color.rgb(18, 24, 45)
-
-        createBaseLayout()
-        showChatScreen()
+        showHomeScreen()
     }
 
+    // =========================================
     // BASE LAYOUT
+    // =========================================
 
     private fun createBaseLayout() {
-        root = LinearLayout(this).apply {
+        rootLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.rgb(245, 247, 252))
+            setPadding(16, 16, 16, 16)
+            setBackgroundColor(Color.WHITE)
         }
 
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(18, 18, 18, 12)
-            setBackgroundColor(Color.rgb(18, 24, 45))
-        }
-
-        val title = TextView(this).apply {
-            text = "SHRIYAAN AI"
-            textSize = 25f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.WHITE)
-        }
-
-        val subtitle = TextView(this).apply {
-            text = "Your AI assistant"
-            textSize = 13f
-            setTextColor(Color.LTGRAY)
-        }
-
-        header.addView(title)
-        header.addView(subtitle)
-
-        val navigation = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(10, 8, 10, 8)
-            setBackgroundColor(Color.rgb(30, 38, 65))
-        }
-
-        val chatTab = makeButton("AI Chat") {
-            showChatScreen()
-        }
-
-        val studioTab = makeButton("Auto Studio") {
-            showStudioScreen()
-        }
-
-        navigation.addView(
-            chatTab,
-            LinearLayout.LayoutParams(0, 48, 1f).apply {
-                setMargins(4, 0, 4, 0)
-            }
-        )
-
-        navigation.addView(
-            studioTab,
-            LinearLayout.LayoutParams(0, 48, 1f).apply {
-                setMargins(4, 0, 4, 0)
-            }
-        )
-
-        content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(12, 12, 12, 12)
-        }
-
-        val contentScroll = ScrollView(this).apply {
-            isFillViewport = true
-            addView(
-                content,
-                LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                )
-            )
-        }
-
-        root.addView(header)
-        root.addView(navigation)
-
-        root.addView(
-            contentScroll,
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                0,
-                1f
-            )
-        )
-
-        setContentView(root)
-    }
-
-    private fun makeButton(
-        label: String,
-        action: () -> Unit
-    ): Button {
-        return Button(this).apply {
-            text = label
-            textSize = 14f
-            isAllCaps = false
-            setOnClickListener {
-                action()
-            }
-        }
+        setContentView(rootLayout)
     }
 
     private fun addHeading(text: String) {
         val heading = TextView(this).apply {
             this.text = text
-            textSize = 21f
+            textSize = 23f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.rgb(25, 35, 65))
-            setPadding(4, 8, 4, 12)
+            setTextColor(Color.rgb(35, 55, 95))
+            setPadding(4, 12, 4, 12)
         }
 
-        content.addView(heading)
-    }
-
-    private fun showToast(message: String) {
-        runOnUiThread {
-            Toast.makeText(
-                this,
-                message,
-                Toast.LENGTH_LONG
-            ).show()
-        }
-    }
-
-    // AI CHAT SCREEN
-
-    private fun showChatScreen() {
-        content.removeAllViews()
-        addHeading("AI Chat")
-
-        content.addView(
-            TextView(this).apply {
-                text = "Shriyaan AI से सवाल पूछें।"
-                textSize = 14f
-                setTextColor(Color.DKGRAY)
-                setPadding(4, 0, 4, 12)
-            }
-        )
-
-        val chatArea = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-
-        val historyScroll = ScrollView(this).apply {
-            isFillViewport = true
-            addView(
-                chatArea,
-                ScrollView.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                )
-            )
-        }
-
-        content.addView(
-            historyScroll,
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                0,
-                1f
-            )
-        )
-
-        val input = EditText(this).apply {
-            hint = "अपना सवाल यहाँ लिखें..."
-            textSize = 16f
-            minLines = 2
-            maxLines = 5
-            setPadding(12, 10, 12, 10)
-            setBackgroundColor(Color.WHITE)
-        }
-
-        content.addView(
-            input,
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply {
-                setMargins(0, 8, 0, 6)
-            }
-        )
-
-        val actions = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-        }
-
-        val newChat = makeButton("New Chat") {
-            chatHistory.clear()
-            prefs.edit().remove("history").apply()
-            chatArea.removeAllViews()
-            input.setText("")
-            showToast("नई चैट शुरू हो गई।")
-        }
-
-        val send = makeButton("Send ➤") {
-            val message = input.text.toString().trim()
-
-            if (message.isEmpty()) {
-                showToast("पहले अपना सवाल लिखें।")
-            } else {
-                sendChatMessage(
-                    message,
-                    input,
-                    send,
-                    chatArea,
-                    historyScroll
-                )
-            }
-        }
-
-        actions.addView(
-            newChat,
-            LinearLayout.LayoutParams(0, 50, 1f)
-        )
-
-        actions.addView(
-            send,
-            LinearLayout.LayoutParams(0, 50, 1f)
-        )
-
-        content.addView(actions)
-        loadSavedHistory(chatArea)
-    }// SEND CHAT MESSAGE
-
-    private fun sendChatMessage(
-        message: String,
-        input: EditText,
-        sendButton: Button,
-        chatArea: LinearLayout,
-        historyScroll: ScrollView
-    ) {
-        input.setText("")
-        input.isEnabled = false
-        sendButton.isEnabled = false
-
-        hideKeyboard(input)
-
-        val userCard = createChatCard(
-            "आप",
-            message,
-            true
-        )
-
-        chatArea.addView(userCard)
-
-        val loading = createChatCard(
-            "Shriyaan AI",
-            "जवाब तैयार हो रहा है...",
-            false
-        )
-
-        chatArea.addView(loading)
-
-        historyScroll.post {
-            historyScroll.fullScroll(View.FOCUS_DOWN)
-        }
-
-        thread {
-            try {
-                val body = JSONObject().apply {
-                    put("message", message)
-                }
-
-                val response = request(
-                    "/chat",
-                    "POST",
-                    body
-                )
-
-                val answer = extractChatAnswer(response)
-
-                runOnUiThread {
-                    chatArea.removeView(loading)
-
-                    chatArea.addView(
-                        createChatCard(
-                            "Shriyaan AI",
-                            answer,
-                            false
-                        )
-                    )
-
-                    chatHistory.add(
-                        Pair(message, answer)
-                    )
-
-                    saveHistory()
-
-                    input.isEnabled = true
-                    sendButton.isEnabled = true
-
-                    historyScroll.post {
-                        historyScroll.fullScroll(
-                            View.FOCUS_DOWN
-                        )
-                    }
-                }
-            } catch (e: Exception) {
-                runOnUiThread {
-                    chatArea.removeView(loading)
-
-                    chatArea.addView(
-                        createChatCard(
-                            "Error",
-                            errorMessage(e),
-                            false
-                        )
-                    )
-
-                    input.isEnabled = true
-                    sendButton.isEnabled = true
-
-                    historyScroll.post {
-                        historyScroll.fullScroll(
-                            View.FOCUS_DOWN
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    // CHAT MESSAGE CARD
-
-    private fun createChatCard(
-        label: String,
-        message: String,
-        isUser: Boolean
-    ): View {
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(12, 10, 12, 10)
-
-            setBackgroundColor(
-                if (isUser) {
-                    Color.rgb(224, 235, 255)
-                } else {
-                    Color.WHITE
-                }
-            )
-        }
-
-        val title = TextView(this).apply {
-            text = label
-            textSize = 13f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.rgb(45, 60, 105))
-        }
-
-        val body = TextView(this).apply {
-            text = message
-            textSize = 15f
-            setTextColor(Color.rgb(30, 35, 45))
-            setPadding(0, 5, 0, 0)
-        }
-
-        card.addView(title)
-        card.addView(body)
-
-        card.layoutParams = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply {
-            setMargins(0, 4, 0, 8)
-        }
-
-        return card
-    }
-
-    // EXTRACT AI RESPONSE
-
-    private fun extractChatAnswer(
-        response: JSONObject
-    ): String {
-        val candidates = response.optJSONArray("candidates")
-
-        if (candidates != null && candidates.length() > 0) {
-            val candidate = candidates.optJSONObject(0)
-            val contentObject =
-                candidate?.optJSONObject("content")
-
-            val parts = contentObject?.optJSONArray("parts")
-
-            if (parts != null) {
-                val result = StringBuilder()
-
-                for (i in 0 until parts.length()) {
-                    val part = parts.optJSONObject(i)
-                    val text = part?.optString("text", "") ?: ""
-
-                    if (text.isNotBlank()) {
-                        if (result.isNotEmpty()) {
-                            result.append("\n")
-                        }
-
-                        result.append(text)
-                    }
-                }
-
-                if (result.isNotEmpty()) {
-                    return result.toString()
-                }
-            }
-        }
-
-        val possibleKeys = listOf(
-            "reply",
-            "response",
-            "answer",
-            "text",
-            "message"
-        )
-
-        for (key in possibleKeys) {
-            val value = response.optString(key, "")
-
-            if (value.isNotBlank() && value != "null") {
-                return value
-            }
-        }
-
-        return response.toString(2)
-    }
-
-    // SAVE AND RESTORE CHAT HISTORY
-
-    private fun loadSavedHistory(
-        chatArea: LinearLayout
-    ) {
-        val saved = prefs.getString("history", null)
-            ?: return
-
-        try {
-            val array = JSONArray(saved)
-
-            for (i in 0 until array.length()) {
-                val item = array.optJSONObject(i)
-                    ?: continue
-
-                val question = item.optString("question", "")
-                val answer = item.optString("answer", "")
-
-                chatHistory.add(
-                    Pair(question, answer)
-                )
-
-                chatArea.addView(
-                    createChatCard(
-                        "आप",
-                        question,
-                        true
-                    )
-                )
-
-                chatArea.addView(
-                    createChatCard(
-                        "Shriyaan AI",
-                        answer,
-                        false
-                    )
-                )
-            }
-        } catch (_: Exception) {
-            prefs.edit().remove("history").apply()
-        }
-    }
-
-    private fun saveHistory() {
-        val array = JSONArray()
-
-        for (item in chatHistory) {
-            array.put(
-                JSONObject().apply {
-                    put("question", item.first)
-                    put("answer", item.second)
-                }
-            )
-        }
-
-        prefs.edit()
-            .putString("history", array.toString())
-            .apply()
-    }
-
-    // HIDE KEYBOARD
-
-    private fun hideKeyboard(view: View) {
-        try {
-            val manager = getSystemService(
-                Context.INPUT_METHOD_SERVICE
-            ) as InputMethodManager
-
-            manager.hideSoftInputFromWindow(
-                view.windowToken,
-                0
-            )
-        } catch (_: Exception) {
-        }
-    }// =========================
-    // AUTO STUDIO SCREEN
-    // =========================
-
-    private fun showStudioScreen() {
-        createBaseLayout()
-
-        addHeading("🎬 Shriyaan AI Studio")
-        addText(
-            "राजस्थान के इतिहास और रोचक तथ्यों पर वीडियो स्क्रिप्ट तैयार करें।",
-            14f
-        )
-
-        val generateButton = makeButton("✨ नई स्क्रिप्ट बनाएँ") {
-            generateScript()
-        }
-        rootLayout.addView(generateButton)
-
-        val statusButton = makeButton("🔄 Studio Status") {
-            loadStudioStatus()
-        }
-        rootLayout.addView(statusButton)
-
-        val queueButton = makeButton("📋 वीडियो Queue देखें") {
-            loadQueue()
-        }
-        rootLayout.addView(queueButton)
-
-        val chatButton = makeButton("💬 AI Chat पर जाएँ") {
-            showChatScreen()
-        }
-        rootLayout.addView(chatButton)
-
-        addHeading("📚 तैयार स्क्रिप्ट / Queue")
-
-        val queueScroll = ScrollView(this)
-        queueScroll.layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            0,
-            1f
-        )
-
-        val queueContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(4, 4, 4, 16)
-        }
-
-        queueScroll.addView(queueContainer)
-        rootLayout.addView(queueScroll)
-
-        loadQueueInto(queueContainer)
+        rootLayout.addView(heading)
     }
 
     private fun addText(text: String, size: Float = 16f) {
@@ -605,20 +75,486 @@ class MainActivity : Activity() {
             this.text = text
             textSize = size
             setTextColor(Color.DKGRAY)
-            setPadding(8, 8, 8, 8)
+            setPadding(6, 8, 6, 8)
         }
+
         rootLayout.addView(label)
     }
 
-    // =========================
+    private fun makeButton(
+        title: String,
+        action: () -> Unit
+    ): Button {
+        return Button(this).apply {
+            text = title
+            isAllCaps = false
+            textSize = 15f
+            setOnClickListener { action() }
+        }
+    }
+
+    private fun showToast(message: String) {
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+    }
+
+    // =========================================
+    // HOME SCREEN
+    // =========================================
+
+    private fun showHomeScreen() {
+        createBaseLayout()
+
+        addHeading("Shriyaan AI")
+        addText("आपका AI Chat और Auto Studio", 17f)
+
+        rootLayout.addView(
+            makeButton("💬 AI Chat खोलें") {
+                showChatScreen()
+            }
+        )
+
+        rootLayout.addView(
+            makeButton("🎬 Auto Studio खोलें") {
+                showStudioScreen()
+            }
+        )
+
+        rootLayout.addView(
+            makeButton("🌐 Server Status जाँचें") {
+                checkServerStatus()
+            }
+        )
+
+        rootLayout.addView(
+            makeButton("ℹ️ ऐप की जानकारी") {
+                showAbout()
+            }
+        )
+
+        addText(
+            "Shriyaan AI — Chat, Script और Studio",
+            13f
+        )
+    }
+
+    private fun showAbout() {
+        AlertDialog.Builder(this)
+            .setTitle("Shriyaan AI")
+            .setMessage(
+                "यह ऐप AI Chat और Studio backend से जुड़ता है।\n\n" +
+                    "वीडियो बनाने और YouTube पर अपलोड करने जैसी सुविधाएँ " +
+                    "तभी काम करेंगी जब backend में उनका वास्तविक implementation हो।"
+            )
+            .setPositiveButton("ठीक है", null)
+            .show()
+    }
+
+    // =========================================
+    // SERVER STATUS
+    // =========================================
+
+    private fun checkServerStatus() {
+        showToast("Server जाँचा जा रहा है...")
+
+        thread {
+            try {
+                val result = request("/")
+
+                runOnUiThread {
+                    showResponseDialog(
+                        "Server Status",
+                        result.toString(2)
+                    )
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    showToast(
+                        "Server से कनेक्शन नहीं हुआ: ${errorMessage(e)}"
+                    )
+                }
+            }
+        }
+    }
+
+    // =========================================
+    // CHAT SCREEN
+    // =========================================
+
+    private fun showChatScreen() {
+        createBaseLayout()
+
+        addHeading("💬 Shriyaan AI Chat")
+
+        rootLayout.addView(
+            makeButton("← Home") {
+                showHomeScreen()
+            }
+        )
+
+        chatScroll = ScrollView(this)
+
+        chatArea = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(4, 4, 4, 12)
+        }
+
+        chatScroll.addView(chatArea)
+
+        rootLayout.addView(
+            chatScroll,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        )
+
+        chatInput = EditText(this).apply {
+            hint = "अपना सवाल लिखें..."
+            textSize = 16f
+            minLines = 1
+            maxLines = 4
+            setPadding(12, 8, 12, 8)
+        }
+
+        rootLayout.addView(
+            chatInput,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+
+        val buttonRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+
+        val sendButton = Button(this).apply {
+            text = "Send ➤"
+            isAllCaps = false
+        }
+
+        val clearButton = Button(this).apply {
+            text = "Clear"
+            isAllCaps = false
+        }
+
+        buttonRow.addView(
+            sendButton,
+            LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            )
+        )
+
+        buttonRow.addView(
+            clearButton,
+            LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            )
+        )
+
+        rootLayout.addView(buttonRow)
+
+        sendButton.setOnClickListener {
+            val message = chatInput.text.toString().trim()
+
+            if (message.isEmpty()) {
+                showToast("पहले अपना सवाल लिखें।")
+            } else {
+                sendChatMessage(message, sendButton)
+            }
+        }
+
+        clearButton.setOnClickListener {
+            chatArea.removeAllViews()
+            saveChatHistory("")
+            showToast("Chat साफ़ कर दी गई।")
+        }
+
+        loadChatHistory()
+    }
+
+    // =========================================
+    // CHAT MESSAGE
+    // =========================================
+
+    private fun sendChatMessage(
+        message: String,
+        sendButton: Button
+    ) {
+        addChatBubble("आप", message, true)
+
+        chatInput.setText("")
+        hideKeyboard()
+
+        sendButton.isEnabled = false
+        sendButton.text = "रुकें..."
+
+        thread {
+            try {
+                val body = JSONObject().apply {
+                    put("message", message)
+                }
+
+                val result = request(
+                    "/chat",
+                    "POST",
+                    body
+                )
+
+                val answer = extractChatAnswer(result)
+
+                runOnUiThread {
+                    addChatBubble("Shriyaan AI", answer, false)
+                    sendButton.isEnabled = true
+                    sendButton.text = "Send ➤"
+                    saveChatHistoryFromView()
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    addChatBubble(
+                        "त्रुटि",
+                        errorMessage(e),
+                        false
+                    )
+
+                    sendButton.isEnabled = true
+                    sendButton.text = "Send ➤"
+                }
+            }
+        }
+    }
+
+    private fun extractChatAnswer(
+        result: JSONObject
+    ): String {
+        val candidates = arrayOf(
+            "reply",
+            "response",
+            "answer",
+            "message",
+            "text",
+            "output"
+        )
+
+        for (key in candidates) {
+            val value = result.optString(key, "")
+            if (value.isNotBlank() && value != "null") {
+                return value
+            }
+        }
+
+        val nested = result.optJSONObject("data")
+        if (nested != null) {
+            for (key in candidates) {
+                val value = nested.optString(key, "")
+                if (value.isNotBlank() && value != "null") {
+                    return value
+                }
+            }
+        }
+
+        return result.toString(2)
+    }
+
+    private fun addChatBubble(
+        speaker: String,
+        message: String,
+        isUser: Boolean
+    ) {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(12, 10, 12, 10)
+
+            setBackgroundColor(
+                if (isUser) {
+                    Color.rgb(230, 240, 255)
+                } else {
+                    Color.rgb(245, 245, 245)
+                }
+            )
+        }
+
+        val name = TextView(this).apply {
+            text = speaker
+            textSize = 14f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.rgb(35, 55, 95))
+        }
+
+        val content = TextView(this).apply {
+            text = message
+            textSize = 16f
+            setTextColor(Color.BLACK)
+            setPadding(0, 6, 0, 0)
+        }
+
+        card.addView(name)
+        card.addView(content)
+
+        val params = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        )
+
+        params.setMargins(0, 6, 0, 6)
+
+        chatArea.addView(card, params)
+
+        chatScroll.post {
+            chatScroll.fullScroll(View.FOCUS_DOWN)
+        }
+    }
+
+    // =========================================
+    // CHAT HISTORY
+    // =========================================
+
+    private fun saveChatHistory(text: String) {
+        prefs.edit()
+            .putString("chat_history", text)
+            .apply()
+    }
+
+    private fun saveChatHistoryFromView() {
+        val history = StringBuilder()
+
+        for (i in 0 until chatArea.childCount) {
+            val card = chatArea.getChildAt(i) as? LinearLayout
+                ?: continue
+
+            val name = card.getChildAt(0) as? TextView
+            val content = card.getChildAt(1) as? TextView
+
+            if (name != null && content != null) {
+                history.append(name.text)
+                    .append(": ")
+                    .append(content.text)
+                    .append("\n\n")
+            }
+        }
+
+        saveChatHistory(history.toString())
+    }
+
+    private fun loadChatHistory() {
+        val history = prefs.getString("chat_history", "") ?: ""
+
+        if (history.isBlank()) {
+            addChatBubble(
+                "Shriyaan AI",
+                "नमस्ते! मैं आपकी क्या सहायता कर सकता हूँ?",
+                false
+            )
+            return
+        }
+
+        val blocks = history.split("\n\n")
+
+        for (block in blocks) {
+            val index = block.indexOf(": ")
+
+            if (index > 0) {
+                val speaker = block.substring(0, index)
+                val message = block.substring(index + 2)
+
+                addChatBubble(
+                    speaker,
+                    message,
+                    speaker == "आप"
+                )
+            }
+        }
+    }
+
+    private fun hideKeyboard() {
+        try {
+            val manager =
+                getSystemService(Context.INPUT_METHOD_SERVICE)
+                    as InputMethodManager
+
+            manager.hideSoftInputFromWindow(
+                chatInput.windowToken,
+                0
+            )
+        } catch (_: Exception) {
+        }
+    }
+
+    // =========================================
+    // AUTO STUDIO SCREEN
+    // =========================================
+
+    private fun showStudioScreen() {
+        createBaseLayout()
+
+        addHeading("🎬 Shriyaan AI Studio")
+        addText(
+            "राजस्थान के इतिहास और रोचक तथ्यों पर वीडियो स्क्रिप्ट बनाएँ।",
+            14f
+        )
+
+        rootLayout.addView(
+            makeButton("← Home") {
+                showHomeScreen()
+            }
+        )
+
+        rootLayout.addView(
+            makeButton("✨ नई स्क्रिप्ट बनाएँ") {
+                generateScript()
+            }
+        )
+
+        rootLayout.addView(
+            makeButton("🔄 Studio Status") {
+                loadStudioStatus()
+            }
+        )
+
+        rootLayout.addView(
+            makeButton("📋 Queue Refresh करें") {
+                loadQueue()
+            }
+        )
+
+        addHeading("📚 Video Queue")
+
+        val queueScroll = ScrollView(this)
+
+        studioQueue = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(4, 4, 4, 12)
+        }
+
+        queueScroll.addView(studioQueue)
+
+        rootLayout.addView(
+            queueScroll,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        )
+
+        loadQueue()
+    }
+
+    // =========================================
     // GENERATE SCRIPT
-    // =========================
+    // =========================================
 
     private fun generateScript() {
         AlertDialog.Builder(this)
             .setTitle("नई वीडियो स्क्रिप्ट")
             .setMessage(
-                "क्या आप राजस्थान के इतिहास और रोचक तथ्यों पर नई स्क्रिप्ट बनाना चाहते हैं?"
+                "राजस्थान के इतिहास और रोचक तथ्यों पर " +
+                    "नई YouTube Shorts स्क्रिप्ट तैयार करें?"
             )
             .setNegativeButton("रद्द करें", null)
             .setPositiveButton("बनाएँ") { _, _ ->
@@ -633,7 +569,10 @@ class MainActivity : Activity() {
         thread {
             try {
                 val body = JSONObject().apply {
-                    put("topic", "राजस्थान का इतिहास और रोचक तथ्य")
+                    put(
+                        "topic",
+                        "राजस्थान का इतिहास और रोचक तथ्य"
+                    )
                     put("language", "Hindi")
                     put("platform", "YouTube Shorts")
                     put("durationSeconds", 45)
@@ -647,28 +586,31 @@ class MainActivity : Activity() {
 
                 runOnUiThread {
                     showResponseDialog(
-                        "स्क्रिप्ट जनरेशन का परिणाम",
+                        "Script Generation",
                         result.toString(2)
                     )
+                    loadQueue()
                 }
             } catch (e: Exception) {
                 runOnUiThread {
-                    showToast("स्क्रिप्ट नहीं बनी: ${e.message}")
+                    showToast(
+                        "स्क्रिप्ट नहीं बनी: ${errorMessage(e)}"
+                    )
                 }
             }
         }
     }
 
-    // =========================
+    // =========================================
     // STUDIO STATUS
-    // =========================
+    // =========================================
 
     private fun loadStudioStatus() {
         showToast("Studio Status लोड हो रहा है...")
 
         thread {
             try {
-                val result = request("/studio/status", "GET")
+                val result = request("/studio/status")
 
                 runOnUiThread {
                     showResponseDialog(
@@ -678,104 +620,84 @@ class MainActivity : Activity() {
                 }
             } catch (e: Exception) {
                 runOnUiThread {
-                    showToast("Status नहीं मिला: ${e.message}")
+                    showToast(
+                        "Status नहीं मिला: ${errorMessage(e)}"
+                    )
                 }
             }
         }
     }
 
-    // =========================
-    // QUEUE
-    // =========================
+    // =========================================
+    // LOAD QUEUE
+    // =========================================
 
     private fun loadQueue() {
         showToast("Queue लोड हो रही है...")
 
         thread {
             try {
-                val result = request("/studio/queue", "GET")
+                val result = request("/studio/queue")
+                val items = result.optJSONArray("items")
+                    ?: JSONArray()
 
                 runOnUiThread {
-                    showResponseDialog(
-                        "Video Queue",
-                        result.toString(2)
-                    )
+                    displayQueue(items)
                 }
             } catch (e: Exception) {
                 runOnUiThread {
-                    showToast("Queue नहीं खुली: ${e.message}")
-                }
-            }
-        }
-    }
+                    studioQueue.removeAllViews()
 
-    private fun loadQueueInto(container: LinearLayout) {
-        container.removeAllViews()
-
-        val loading = TextView(this).apply {
-            text = "Queue लोड हो रही है..."
-            textSize = 15f
-            setPadding(8, 12, 8, 12)
-        }
-        container.addView(loading)
-
-        thread {
-            try {
-                val result = request("/studio/queue", "GET")
-                val items = result.optJSONArray("items") ?: JSONArray()
-
-                runOnUiThread {
-                    container.removeAllViews()
-
-                    if (items.length() == 0) {
-                        val empty = TextView(this).apply {
-                            text = "अभी Queue खाली है। नई स्क्रिप्ट बनाने के लिए ऊपर बटन दबाएँ।"
-                            textSize = 15f
-                            setPadding(8, 12, 8, 12)
-                        }
-                        container.addView(empty)
-                        return@runOnUiThread
-                    }
-
-                    for (i in 0 until items.length()) {
-                        val item = items.optJSONObject(i) ?: continue
-                        addQueueCard(container, item)
-                    }
-                }
-            } catch (e: Exception) {
-                runOnUiThread {
-                    container.removeAllViews()
-
-                    val error = TextView(this).apply {
-                        text = "Queue लोड नहीं हुई: ${e.message}"
+                    val errorText = TextView(this).apply {
+                        text = "Queue लोड नहीं हुई:\n${errorMessage(e)}"
                         textSize = 14f
+                        setTextColor(Color.RED)
                         setPadding(8, 12, 8, 12)
                     }
-                    container.addView(error)
+
+                    studioQueue.addView(errorText)
                 }
             }
         }
     }
 
-    private fun addQueueCard(
-        container: LinearLayout,
-        item: JSONObject
-    ) {
-        val title = item.optString(
-            "title",
-            item.optString("topic", "बिना शीर्षक की स्क्रिप्ट")
-        )
+    private fun displayQueue(items: JSONArray) {
+        studioQueue.removeAllViews()
 
+        if (items.length() == 0) {
+            val emptyText = TextView(this).apply {
+                text = "अभी Queue खाली है।\nनई स्क्रिप्ट बनाने के लिए ऊपर बटन दबाएँ।"
+                textSize = 16f
+                setTextColor(Color.DKGRAY)
+                setPadding(8, 16, 8, 16)
+            }
+
+            studioQueue.addView(emptyText)
+            return
+        }
+
+        for (index in 0 until items.length()) {
+            val item = items.optJSONObject(index) ?: continue
+            addQueueCard(item)
+        }
+    }
+
+    private fun addQueueCard(item: JSONObject) {
         val id = item.optString(
             "id",
             item.optString("scriptId", "")
+        )
+
+        val title = item.optString(
+            "title",
+            item.optString("topic", "बिना शीर्षक की स्क्रिप्ट")
         )
 
         val status = item.optString("status", "अज्ञात")
 
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(14, 12, 14, 12)
+            setPadding(12, 12, 12, 12)
             setBackgroundColor(Color.rgb(245, 245, 245))
         }
 
@@ -783,48 +705,57 @@ class MainActivity : Activity() {
             text = title
             textSize = 17f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.BLACK)
+            setTextColor(Color.rgb(35, 55, 95))
         }
+
         card.addView(titleView)
 
         val statusView = TextView(this).apply {
-            text = "स्थिति: $status"
+            text = "स्थिति: ${statusHindi(status)}"
             textSize = 14f
+            setTextColor(Color.DKGRAY)
             setPadding(0, 6, 0, 6)
         }
+
         card.addView(statusView)
 
-        val openButton = makeButton("स्क्रिप्ट विवरण देखें") {
-            showScriptDetails(item)
-        }
-        card.addView(openButton)
-
-        val actionsButton = makeButton("Review / Approve / Revise") {
-            if (id.isBlank()) {
-                showToast("इस स्क्रिप्ट की ID उपलब्ध नहीं है।")
-            } else {
-                showScriptActions(item)
+        card.addView(
+            makeButton("स्क्रिप्ट देखें") {
+                showScriptDetails(item)
             }
-        }
-        card.addView(actionsButton)
+        )
+
+        card.addView(
+            makeButton("Review / Approve / Revise") {
+                if (id.isBlank()) {
+                    showToast("इस स्क्रिप्ट की ID उपलब्ध नहीं है।")
+                } else {
+                    showScriptActions(item)
+                }
+            }
+        )
 
         val divider = View(this).apply {
             setBackgroundColor(Color.LTGRAY)
         }
+
         val dividerParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             2
         )
+
         dividerParams.setMargins(0, 12, 0, 12)
+
         card.addView(divider, dividerParams)
 
-        container.addView(
-            card,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
+        val cardParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
         )
+
+        cardParams.setMargins(0, 6, 0, 6)
+
+        studioQueue.addView(card, cardParams)
     }
 
     private fun statusHindi(status: String): String {
@@ -840,40 +771,50 @@ class MainActivity : Activity() {
         }
     }
 
-    // =========================
-    // SCRIPT DETAILS AND ACTIONS
-    // =========================
+    // =========================================
+    // SCRIPT DETAILS
+    // =========================================
 
     private fun showScriptDetails(item: JSONObject) {
-        val details = buildString {
-            appendLine("शीर्षक:")
-            appendLine(
-                item.optString("title", item.optString("topic", "उपलब्ध नहीं"))
-            )
-            appendLine()
+        val title = item.optString(
+            "title",
+            item.optString("topic", "स्क्रिप्ट विवरण")
+        )
 
-            appendLine("स्थिति:")
-            appendLine(statusHindi(item.optString("status", "अज्ञात")))
-            appendLine()
-
-            appendLine("स्क्रिप्ट:")
-            appendLine(
+        val script = item.optString(
+            "script",
+            item.optString(
+                "content",
                 item.optString(
-                    "script",
-                    item.optString(
-                        "content",
-                        item.optString("text", "स्क्रिप्ट का टेक्स्ट उपलब्ध नहीं है।")
-                    )
+                    "text",
+                    "इस item में script text उपलब्ध नहीं है।"
                 )
             )
-        }
+        )
+
+        val status = item.optString("status", "अज्ञात")
+
+        val details = """
+            शीर्षक:
+            $title
+
+            स्थिति:
+            ${statusHindi(status)}
+
+            स्क्रिप्ट:
+            $script
+        """.trimIndent()
 
         showResponseDialog("स्क्रिप्ट विवरण", details)
     }
 
+    // =========================================
+    // SCRIPT ACTIONS
+    // =========================================
+
     private fun showScriptActions(item: JSONObject) {
-        val choices = arrayOf(
-            "स्क्रिप्ट Review करें",
+        val actions = arrayOf(
+            "Review करें",
             "Approve करें",
             "सुधार के लिए भेजें",
             "Reject करें"
@@ -881,10 +822,14 @@ class MainActivity : Activity() {
 
         AlertDialog.Builder(this)
             .setTitle("स्क्रिप्ट के विकल्प")
-            .setItems(choices) { _, which ->
-                when (which) {
+            .setItems(actions) { _, index ->
+                when (index) {
                     0 -> reviewScript(item)
-                    1 -> reviewScriptWithAction(item, "approve", "")
+                    1 -> reviewScriptWithAction(
+                        item,
+                        "approve",
+                        ""
+                    )
                     2 -> showRevisionDialog(item)
                     3 -> confirmReject(item)
                 }
@@ -899,26 +844,28 @@ class MainActivity : Activity() {
 
     private fun showRevisionDialog(item: JSONObject) {
         val input = EditText(this).apply {
-            hint = "बताएँ कि स्क्रिप्ट में क्या सुधार चाहिए"
+            hint = "सुधार का निर्देश लिखें"
             minLines = 3
-            setPadding(24, 16, 24, 16)
+            setPadding(20, 16, 20, 16)
         }
 
         AlertDialog.Builder(this)
             .setTitle("स्क्रिप्ट में सुधार")
-            .setMessage("उदाहरण: शुरुआत आकर्षक बनाएँ, तथ्य जाँचें या भाषा सरल करें।")
+            .setMessage(
+                "उदाहरण: भाषा सरल करें, शुरुआत आकर्षक बनाएँ या तथ्य जाँचें।"
+            )
             .setView(input)
             .setNegativeButton("रद्द करें", null)
             .setPositiveButton("सुधार भेजें") { _, _ ->
-                val instructions = input.text.toString().trim()
+                val instruction = input.text.toString().trim()
 
-                if (instructions.isBlank()) {
+                if (instruction.isBlank()) {
                     showToast("पहले सुधार का निर्देश लिखें।")
                 } else {
                     reviewScriptWithAction(
                         item,
                         "revise",
-                        instructions
+                        instruction
                     )
                 }
             }
@@ -928,7 +875,9 @@ class MainActivity : Activity() {
     private fun confirmReject(item: JSONObject) {
         AlertDialog.Builder(this)
             .setTitle("स्क्रिप्ट Reject करें?")
-            .setMessage("क्या आप वाकई इस स्क्रिप्ट को अस्वीकार करना चाहते हैं?")
+            .setMessage(
+                "क्या आप इस स्क्रिप्ट को अस्वीकार करना चाहते हैं?"
+            )
             .setNegativeButton("नहीं", null)
             .setPositiveButton("हाँ, Reject करें") { _, _ ->
                 reviewScriptWithAction(item, "reject", "")
@@ -951,7 +900,7 @@ class MainActivity : Activity() {
             return
         }
 
-        showToast("अनुरोध भेजा जा रहा है...")
+        showToast("Studio को अनुरोध भेजा जा रहा है...")
 
         thread {
             try {
@@ -970,19 +919,24 @@ class MainActivity : Activity() {
 
                 runOnUiThread {
                     showResponseDialog(
-                        "Studio का जवाब",
+                        "Studio Response",
                         result.toString(2)
                     )
+                    loadQueue()
                 }
             } catch (e: Exception) {
                 runOnUiThread {
-                    showToast("अनुरोध पूरा नहीं हुआ: ${e.message}")
+                    showToast(
+                        "अनुरोध पूरा नहीं हुआ: ${errorMessage(e)}"
+                    )
                 }
             }
         }
-    }// =========================
+    }
+
+    // =========================================
     // RESPONSE DIALOG
-    // =========================
+    // =========================================
 
     private fun showResponseDialog(
         title: String,
@@ -1005,27 +959,31 @@ class MainActivity : Activity() {
             .show()
     }
 
-    // =========================
+    // =========================================
     // HTTP REQUEST HELPER
-    // =========================
+    // =========================================
 
     private fun request(
         path: String,
-        method: String,
+        method: String = "GET",
         body: JSONObject? = null
     ): JSONObject {
-        val baseUrl =
-            "https://shriyaan-ai-api.tt6914794.workers.dev"
-
-        val connection = (URL(baseUrl + path).openConnection()
-                as HttpURLConnection).apply {
+        val connection = (
+            URL(baseUrl + path).openConnection()
+                as HttpURLConnection
+        ).apply {
             requestMethod = method
             connectTimeout = 20000
             readTimeout = 60000
-            setRequestProperty("Accept", "application/json")
+
+            setRequestProperty(
+                "Accept",
+                "application/json"
+            )
 
             if (body != null) {
                 doOutput = true
+
                 setRequestProperty(
                     "Content-Type",
                     "application/json; charset=UTF-8"
@@ -1046,16 +1004,15 @@ class MainActivity : Activity() {
 
             val responseCode = connection.responseCode
 
-            val responseStream =
-                if (responseCode in 200..299) {
-                    connection.inputStream
-                } else {
-                    connection.errorStream
-                }
+            val stream = if (responseCode in 200..299) {
+                connection.inputStream
+            } else {
+                connection.errorStream
+            }
 
-            val responseText = responseStream?.use { stream ->
+            val responseText = stream?.use {
                 BufferedReader(
-                    InputStreamReader(stream, Charsets.UTF_8)
+                    InputStreamReader(it, Charsets.UTF_8)
                 ).use { reader ->
                     reader.readText()
                 }
@@ -1063,7 +1020,7 @@ class MainActivity : Activity() {
 
             if (responseCode !in 200..299) {
                 throw Exception(
-                    "Server error $responseCode: $responseText"
+                    "HTTP $responseCode: $responseText"
                 )
             }
 
@@ -1077,17 +1034,13 @@ class MainActivity : Activity() {
         }
     }
 
-    // =========================
+    // =========================================
     // ERROR MESSAGE
-    // =========================
+    // =========================================
 
     private fun errorMessage(error: Throwable): String {
         return error.message
             ?: error.localizedMessage
             ?: "अज्ञात त्रुटि हुई।"
     }
-
-    // =========================
-    // END OF MAIN ACTIVITY
-    // =========================
 }
