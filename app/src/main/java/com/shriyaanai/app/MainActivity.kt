@@ -749,4 +749,325 @@ class MainActivity : Activity() {
                         "Platform: $platform\n" +
                         "Videos per day: $videos\n" +
                         "Duration: $duration seconds\n" +
-                        "Status: ${response.optString("status", "Available")}"
+                        "Status: ${response.optString("status", "Available")}"                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    statusText.text =
+                        "Status load नहीं हुआ:\n${errorMessage(e)}"
+                }
+            }
+        }
+    }
+
+    private fun loadQueue() {
+        showStudioScreen()
+    }
+
+    private fun loadQueueInto(
+        queueContainer: LinearLayout
+    ) {
+        thread {
+            try {
+                val response = request("/studio/queue", "GET")
+                val items = response.optJSONArray("items") ?: JSONArray()
+
+                runOnUiThread {
+                    queueContainer.removeAllViews()
+
+                    if (items.length() == 0) {
+                        queueContainer.addView(
+                            TextView(this).apply {
+                                text = "Queue अभी खाली है। Generate New Script दबाएँ।"
+                                textSize = 14f
+                                setPadding(8, 12, 8, 12)
+                            }
+                        )
+                        return@runOnUiThread
+                    }
+
+                    for (i in 0 until items.length()) {
+                        val item = items.optJSONObject(i) ?: continue
+                        addQueueCard(queueContainer, item)
+                    }
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    queueContainer.addView(
+                        TextView(this).apply {
+                            text = "Queue error: ${errorMessage(e)}"
+                            setTextColor(Color.RED)
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    private fun addQueueCard(
+        queueContainer: LinearLayout,
+        item: JSONObject
+    ) {
+        val title = item.optString(
+            "title",
+            item.optString("topic", "Untitled Script")
+        )
+
+        val status = item.optString("status", "pending")
+
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(14, 12, 14, 12)
+            setBackgroundColor(Color.WHITE)
+        }
+
+        card.addView(TextView(this).apply {
+            text = title
+            textSize = 17f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.rgb(25, 35, 65))
+        })
+
+        card.addView(TextView(this).apply {
+            text = "Status: ${statusHindi(status)}"
+            textSize = 13f
+            setPadding(0, 5, 0, 8)
+        })
+
+        card.addView(makeButton("Open Script") {
+            showScriptDetails(item)
+        })
+
+        queueContainer.addView(
+            card,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(0, 5, 0, 10)
+            }
+        )
+    }
+
+    private fun statusHindi(status: String): String {
+        return when (status.lowercase()) {
+            "pending" -> "Review के लिए तैयार"
+            "approved" -> "Approved"
+            "rejected" -> "Rejected"
+            "revision" -> "Revision requested"
+            "revised" -> "Revised"
+            "published" -> "Published"
+            else -> status
+        }
+    }
+
+    private fun showScriptDetails(item: JSONObject) {
+        val title = item.optString(
+            "title",
+            item.optString("topic", "Script Details")
+        )
+
+        val script = item.optString(
+            "script",
+            item.optString(
+                "content",
+                item.optString("text", "Script text उपलब्ध नहीं है।")
+            )
+        )
+
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(script)
+            .setPositiveButton("Approve") { _, _ ->
+                reviewScript(item, "approve", "")
+            }
+            .setNegativeButton("More Options") { _, _ ->
+                showScriptActions(item)
+            }
+            .setNeutralButton("Close", null)
+            .show()
+    }
+
+    private fun showScriptActions(item: JSONObject) {
+        AlertDialog.Builder(this)
+            .setTitle("Script Actions")
+            .setItems(
+                arrayOf("Revise Script", "Reject Script", "Cancel")
+            ) { _, which ->
+                when (which) {
+                    0 -> showRevisionDialog(item)
+                    1 -> confirmReject(item)
+                }
+            }
+            .show()
+    }
+
+    private fun showRevisionDialog(item: JSONObject) {
+        val input = EditText(this).apply {
+            hint = "बताएँ कि स्क्रिप्ट में क्या बदलाव चाहिए"
+            minLines = 3
+            maxLines = 6
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Revise Script")
+            .setView(input)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Submit") { _, _ ->
+                val instructions = input.text.toString().trim()
+
+                if (instructions.isBlank()) {
+                    showToast("कृपया बदलाव लिखें।")
+                } else {
+                    reviewScript(item, "revise", instructions)
+                }
+            }
+            .show()
+    }
+
+    private fun confirmReject(item: JSONObject) {
+        AlertDialog.Builder(this)
+            .setTitle("Reject Script?")
+            .setMessage("क्या आप इस स्क्रिप्ट को Reject करना चाहते हैं?")
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Reject") { _, _ ->
+                reviewScript(item, "reject", "")
+            }
+            .show()
+    }
+
+    private fun reviewScript(
+        item: JSONObject,
+        action: String,
+        instructions: String
+    ) {
+        val id = item.optString(
+            "id",
+            item.optString("scriptId", "")
+        )
+
+        if (id.isBlank()) {
+            showToast("Script ID नहीं मिली। Worker के queue item की जाँच करें।")
+            return
+        }
+
+        thread {
+            try {
+                val body = JSONObject().apply {
+                    put("id", id)
+                    put("action", action)
+
+                    if (instructions.isNotBlank()) {
+                        put("instructions", instructions)
+                        put("feedback", instructions)
+                    }
+                }
+
+                val response = request(
+                    "/studio/review",
+                    "POST",
+                    body
+                )
+
+                runOnUiThread {
+                    AlertDialog.Builder(this)
+                        .setTitle("Review Result")
+                        .setMessage(response.toString(2))
+                        .setPositiveButton("OK", null)
+                        .show()
+
+                    showStudioScreen()
+                }
+            } catch (e: Exception) {
+                showToast(errorMessage(e))
+            }
+        }
+    }
+
+    private fun request(
+        path: String,
+        method: String,
+        body: JSONObject? = null
+    ): JSONObject {
+        val connection = URL(
+            baseUrl.trimEnd('/') + path
+        ).openConnection() as HttpURLConnection
+
+        try {
+            connection.requestMethod = method
+            connection.connectTimeout = 20000
+            connection.readTimeout = 30000
+
+            connection.setRequestProperty(
+                "Accept",
+                "application/json"
+            )
+
+            if (body != null) {
+                connection.doOutput = true
+                connection.setRequestProperty(
+                    "Content-Type",
+                    "application/json; charset=UTF-8"
+                )
+
+                OutputStreamWriter(
+                    connection.outputStream,
+                    Charsets.UTF_8
+                ).use { writer ->
+                    writer.write(body.toString())
+                }
+            }
+
+            val code = connection.responseCode
+
+            val stream = if (code in 200..299) {
+                connection.inputStream
+            } else {
+                connection.errorStream
+            }
+
+            val responseText = if (stream != null) {
+                BufferedReader(
+                    InputStreamReader(stream, Charsets.UTF_8)
+                ).use { it.readText() }
+            } else {
+                ""
+            }
+
+            val json = try {
+                JSONObject(responseText)
+            } catch (_: Exception) {
+                JSONObject().put("rawResponse", responseText)
+            }
+
+            if (code !in 200..299) {
+                throw Exception(
+                    "HTTP $code: " +
+                        json.optString(
+                            "error",
+                            json.optString("message", responseText)
+                        )
+                )
+            }
+
+            return json
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun showResponseDialog(
+        title: String,
+        response: JSONObject
+    ) {
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(response.toString(2))
+            .setPositiveButton("OK", null)
+            .show()
+    }
+
+    private fun errorMessage(exception: Exception): String {
+        return exception.message
+            ?: "कुछ गलत हो गया। कृपया दोबारा प्रयास करें।"
+    }
+}
