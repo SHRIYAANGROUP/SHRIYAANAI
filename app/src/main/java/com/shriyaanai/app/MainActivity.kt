@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.graphics.Color
 import android.graphics.Typeface
 import android.view.View
+import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.content.Context
 import android.widget.Button
@@ -40,6 +41,11 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        window.setSoftInputMode(
+            WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+        )
+
         showHomeScreen()
     }
 
@@ -103,7 +109,7 @@ class MainActivity : Activity() {
     private fun showHomeScreen() {
         createBaseLayout()
 
-        addHeading("Shriyaan AI")
+        addHeading("✦ Shriyaan AI")
         addText("आपका AI Chat और Auto Studio", 17f)
 
         rootLayout.addView(
@@ -130,9 +136,10 @@ class MainActivity : Activity() {
             }
         )
 
+        addText("Shriyaan AI — Chat, Script और Studio", 13f)
         addText(
-            "Shriyaan AI — Chat, Script और Studio",
-            13f
+            "AI जवाब और Studio सुविधाएँ सर्वर की उपलब्धता पर निर्भर हैं।",
+            12f
         )
     }
 
@@ -140,9 +147,11 @@ class MainActivity : Activity() {
         AlertDialog.Builder(this)
             .setTitle("Shriyaan AI")
             .setMessage(
-                "यह ऐप AI Chat और Studio backend से जुड़ता है।\n\n" +
-                    "वीडियो बनाने और YouTube पर अपलोड करने जैसी सुविधाएँ " +
-                    "तभी काम करेंगी जब backend में उनका वास्तविक implementation हो।"
+                "Shriyaan AI में AI Chat और Studio सुविधाएँ उपलब्ध हैं।\n\n" +
+                    "स्क्रिप्ट बनाने और समीक्षा करने के लिए इंटरनेट तथा " +
+                    "सही ढंग से काम करने वाला backend आवश्यक है।\n\n" +
+                    "वीडियो रेंडरिंग और YouTube पर अपलोड तभी काम करेंगे " +
+                    "जब सर्वर पर वे सुविधाएँ भी लागू हों।"
             )
             .setPositiveButton("ठीक है", null)
             .show()
@@ -168,7 +177,7 @@ class MainActivity : Activity() {
             } catch (e: Exception) {
                 runOnUiThread {
                     showToast(
-                        "Server से कनेक्शन नहीं हुआ: ${errorMessage(e)}"
+                        "Server कनेक्शन विफल: ${errorMessage(e)}"
                     )
                 }
             }
@@ -286,6 +295,7 @@ class MainActivity : Activity() {
         sendButton: Button
     ) {
         addChatBubble("आप", message, true)
+        saveChatHistoryFromView()
 
         chatInput.setText("")
         hideKeyboard()
@@ -309,9 +319,10 @@ class MainActivity : Activity() {
 
                 runOnUiThread {
                     addChatBubble("Shriyaan AI", answer, false)
+                    saveChatHistoryFromView()
+
                     sendButton.isEnabled = true
                     sendButton.text = "Send ➤"
-                    saveChatHistoryFromView()
                 }
             } catch (e: Exception) {
                 runOnUiThread {
@@ -321,6 +332,8 @@ class MainActivity : Activity() {
                         false
                     )
 
+                    saveChatHistoryFromView()
+
                     sendButton.isEnabled = true
                     sendButton.text = "Send ➤"
                 }
@@ -328,9 +341,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun extractChatAnswer(
-        result: JSONObject
-    ): String {
+    private fun extractChatAnswer(result: JSONObject): String {
         val candidates = arrayOf(
             "reply",
             "response",
@@ -358,7 +369,14 @@ class MainActivity : Activity() {
             }
         }
 
-        return result.toString(2)
+        if (result.optBoolean("success", false)) {
+            return "अनुरोध सफल हुआ, लेकिन सर्वर ने जवाब का टेक्स्ट नहीं भेजा।"
+        }
+
+        return result.optString(
+            "error",
+            "AI से कोई टेक्स्ट जवाब नहीं मिला।"
+        )
     }
 
     private fun addChatBubble(
@@ -493,6 +511,7 @@ class MainActivity : Activity() {
         createBaseLayout()
 
         addHeading("🎬 Shriyaan AI Studio")
+
         addText(
             "राजस्थान के इतिहास और रोचक तथ्यों पर वीडियो स्क्रिप्ट बनाएँ।",
             14f
@@ -585,10 +604,22 @@ class MainActivity : Activity() {
                 )
 
                 runOnUiThread {
-                    showResponseDialog(
-                        "Script Generation",
-                        result.toString(2)
-                    )
+                    val item = result.optJSONObject("item")
+
+                    if (result.optBoolean("success", false) &&
+                        item != null
+                    ) {
+                        showScriptDetails(item)
+                    } else {
+                        showResponseDialog(
+                            "स्क्रिप्ट प्रतिक्रिया",
+                            result.optString(
+                                "message",
+                                result.toString(2)
+                            )
+                        )
+                    }
+
                     loadQueue()
                 }
             } catch (e: Exception) {
@@ -633,8 +664,6 @@ class MainActivity : Activity() {
     // =========================================
 
     private fun loadQueue() {
-        showToast("Queue लोड हो रही है...")
-
         thread {
             try {
                 val result = request("/studio/queue")
@@ -646,16 +675,18 @@ class MainActivity : Activity() {
                 }
             } catch (e: Exception) {
                 runOnUiThread {
-                    studioQueue.removeAllViews()
+                    if (::studioQueue.isInitialized) {
+                        studioQueue.removeAllViews()
 
-                    val errorText = TextView(this).apply {
-                        text = "Queue लोड नहीं हुई:\n${errorMessage(e)}"
-                        textSize = 14f
-                        setTextColor(Color.RED)
-                        setPadding(8, 12, 8, 12)
+                        val errorText = TextView(this).apply {
+                            text = "Queue लोड नहीं हुई:\n${errorMessage(e)}"
+                            textSize = 14f
+                            setTextColor(Color.RED)
+                            setPadding(8, 12, 8, 12)
+                        }
+
+                        studioQueue.addView(errorText)
                     }
-
-                    studioQueue.addView(errorText)
                 }
             }
         }
@@ -745,16 +776,13 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams.MATCH_PARENT,
             2
         )
-
         dividerParams.setMargins(0, 12, 0, 12)
-
         card.addView(divider, dividerParams)
 
         val cardParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
         )
-
         cardParams.setMargins(0, 6, 0, 6)
 
         studioQueue.addView(card, cardParams)
@@ -816,7 +844,7 @@ class MainActivity : Activity() {
 
     private fun showScriptActions(item: JSONObject) {
         val actions = arrayOf(
-            "Review करें",
+            "स्क्रिप्ट विवरण देखें",
             "Approve करें",
             "सुधार के लिए भेजें",
             "Reject करें"
@@ -826,12 +854,13 @@ class MainActivity : Activity() {
             .setTitle("स्क्रिप्ट के विकल्प")
             .setItems(actions) { _, index ->
                 when (index) {
-                    0 -> reviewScript(item)
+                    0 -> showScriptDetails(item)
 
-                    1 -> reviewScriptWithAction(
+                    1 -> confirmReviewAction(
                         item,
                         "approved",
-                        ""
+                        "स्क्रिप्ट Approve करें?",
+                        "क्या आप इस स्क्रिप्ट को स्वीकृत करना चाहते हैं?"
                     )
 
                     2 -> showRevisionDialog(item)
@@ -843,11 +872,20 @@ class MainActivity : Activity() {
             .show()
     }
 
-    private fun reviewScript(item: JSONObject) {
-        // Review बटन स्क्रिप्ट को pending ही रखता है।
-        // वास्तविक समीक्षा रिकॉर्ड करने के लिए Worker में
-        // अलग review status होना आवश्यक होगा।
-        reviewScriptWithAction(item, "pending", "")
+    private fun confirmReviewAction(
+        item: JSONObject,
+        status: String,
+        title: String,
+        message: String
+    ) {
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(message)
+            .setNegativeButton("रद्द करें", null)
+            .setPositiveButton("हाँ, आगे बढ़ें") { _, _ ->
+                reviewScriptWithAction(item, status, "")
+            }
+            .show()
     }
 
     private fun showRevisionDialog(item: JSONObject) {
@@ -888,11 +926,7 @@ class MainActivity : Activity() {
             )
             .setNegativeButton("नहीं", null)
             .setPositiveButton("हाँ, Reject करें") { _, _ ->
-                reviewScriptWithAction(
-                    item,
-                    "rejected",
-                    ""
-                )
+                reviewScriptWithAction(item, "rejected", "")
             }
             .show()
     }
@@ -961,6 +995,7 @@ class MainActivity : Activity() {
             textSize = 14f
             setTextColor(Color.DKGRAY)
             setPadding(24, 20, 24, 20)
+            setTextIsSelectable(true)
         }
 
         val scrollView = ScrollView(this)
@@ -990,14 +1025,10 @@ class MainActivity : Activity() {
             connectTimeout = 20000
             readTimeout = 60000
 
-            setRequestProperty(
-                "Accept",
-                "application/json"
-            )
+            setRequestProperty("Accept", "application/json")
 
             if (body != null) {
                 doOutput = true
-
                 setRequestProperty(
                     "Content-Type",
                     "application/json; charset=UTF-8"
@@ -1033,9 +1064,7 @@ class MainActivity : Activity() {
             } ?: ""
 
             if (responseCode !in 200..299) {
-                throw Exception(
-                    "HTTP $responseCode: $responseText"
-                )
+                throw Exception("HTTP $responseCode: $responseText")
             }
 
             return try {
