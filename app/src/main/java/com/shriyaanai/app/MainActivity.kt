@@ -4,8 +4,10 @@ import android.app.Activity
 import android.os.Bundle
 import android.graphics.Color
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.widget.*
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -16,9 +18,24 @@ class MainActivity : Activity() {
     private lateinit var chatBox: TextView
     private lateinit var input: EditText
     private lateinit var sendButton: Button
+    private lateinit var scrollView: ScrollView
+    private lateinit var newChatButton: Button
 
     private val apiUrl =
         "https://shriyaan-ai-api.tt6914794.workers.dev/chat"
+
+    private val preferences by lazy {
+        getSharedPreferences("shriyaan_chat_history", MODE_PRIVATE)
+    }
+
+    private data class ChatMessage(
+        val role: String,
+        val text: String
+    )
+
+    private val messages = mutableListOf<ChatMessage>()
+
+    private var isWaiting = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -26,35 +43,66 @@ class MainActivity : Activity() {
         window.statusBarColor = Color.rgb(15, 15, 30)
         window.navigationBarColor = Color.rgb(15, 15, 30)
 
+        loadHistory()
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(20, 20, 20, 16)
+            setPadding(16, 12, 16, 12)
             setBackgroundColor(Color.rgb(15, 15, 30))
+        }
+
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
         }
 
         val title = TextView(this).apply {
             text = "✨ Shriyaan AI"
-            textSize = 27f
+            textSize = 25f
             setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
-            setPadding(8, 16, 8, 16)
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(4, 12, 4, 12)
         }
+
+        header.addView(
+            title,
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        )
+
+        newChatButton = Button(this).apply {
+            text = "＋ नई चैट"
+            textSize = 12f
+            setOnClickListener {
+                startNewChat()
+            }
+        }
+
+        header.addView(
+            newChatButton,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        )
 
         val subtitle = TextView(this).apply {
             text = "Your personal AI assistant"
             textSize = 14f
             setTextColor(Color.LTGRAY)
             gravity = Gravity.CENTER
-            setPadding(8, 0, 8, 16)
+            setPadding(8, 0, 8, 12)
         }
 
-        val scrollView = ScrollView(this)
+        scrollView = ScrollView(this).apply {
+            isFillViewport = true
+            setBackgroundColor(Color.rgb(22, 22, 40))
+        }
 
         chatBox = TextView(this).apply {
-            text = "Shriyaan AI में आपका स्वागत है! 👋\n\nअपना सवाल नीचे लिखें।"
-            textSize = 17f
+            textSize = 16f
             setTextColor(Color.WHITE)
-            setPadding(12, 12, 12, 12)
+            setPadding(14, 14, 14, 14)
+            setTextIsSelectable(true)
         }
 
         scrollView.addView(chatBox)
@@ -78,7 +126,7 @@ class MainActivity : Activity() {
             }
         }
 
-        root.addView(title)
+        root.addView(header)
         root.addView(subtitle)
 
         root.addView(
@@ -87,7 +135,9 @@ class MainActivity : Activity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 0,
                 1f
-            )
+            ).apply {
+                bottomMargin = 10
+            }
         )
 
         root.addView(
@@ -96,7 +146,7 @@ class MainActivity : Activity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
-                bottomMargin = 8
+                bottomMargin = 6
             }
         )
 
@@ -109,6 +159,114 @@ class MainActivity : Activity() {
         )
 
         setContentView(root)
+
+        renderChat()
+    }
+
+    private fun loadHistory() {
+        messages.clear()
+
+        val saved = preferences.getString("messages", "[]") ?: "[]"
+
+        try {
+            val array = JSONArray(saved)
+
+            for (i in 0 until array.length()) {
+                val item = array.getJSONObject(i)
+
+                messages.add(
+                    ChatMessage(
+                        role = item.optString("role", "user"),
+                        text = item.optString("text", "")
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            messages.clear()
+        }
+    }
+
+    private fun saveHistory() {
+        val array = JSONArray()
+
+        messages.forEach { message ->
+            array.put(
+                JSONObject()
+                    .put("role", message.role)
+                    .put("text", message.text)
+            )
+        }
+
+        preferences.edit()
+            .putString("messages", array.toString())
+            .apply()
+    }
+
+    private fun renderChat() {
+        val display = StringBuilder()
+
+        if (messages.isEmpty()) {
+            display.append(
+                "Shriyaan AI में आपका स्वागत है! 👋\n\n" +
+                "अपना सवाल नीचे लिखें।"
+            )
+        } else {
+            messages.forEach { message ->
+                when (message.role) {
+                    "user" -> {
+                        display.append("🧑 आप:\n")
+                        display.append(message.text)
+                    }
+
+                    "assistant" -> {
+                        display.append("🤖 Shriyaan AI:\n")
+                        display.append(message.text)
+                    }
+                }
+
+                display.append("\n\n")
+            }
+        }
+
+        if (isWaiting) {
+            display.append("🤖 Shriyaan AI: सोच रहा हूँ...")
+        }
+
+        chatBox.text = display.toString()
+
+        scrollView.post {
+            scrollView.fullScroll(View.FOCUS_DOWN)
+        }
+    }
+
+    private fun startNewChat() {
+        if (isWaiting) {
+            Toast.makeText(
+                this,
+                "पहले मौजूदा जवाब आने दें।",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+
+        if (messages.isEmpty()) {
+            Toast.makeText(
+                this,
+                "यह पहले से नई चैट है।",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+
+        messages.clear()
+        saveHistory()
+        renderChat()
+
+        Toast.makeText(
+            this,
+            "नई चैट शुरू हो गई।",
+            Toast.LENGTH_SHORT
+        ).show()
     }
 
     private fun sendMessage() {
@@ -117,78 +275,111 @@ class MainActivity : Activity() {
         if (message.isEmpty()) {
             Toast.makeText(
                 this,
-                "पहले अपना सवाल लिखें",
+                "पहले अपना सवाल लिखें।",
                 Toast.LENGTH_SHORT
             ).show()
             return
         }
 
+        if (isWaiting) {
+            return
+        }
+
+        messages.add(ChatMessage("user", message))
+        saveHistory()
+
         input.text.clear()
-        chatBox.append("\n\n🧑 आप: $message\n\n🤖 Shriyaan AI: सोच रहा हूँ...")
+
+        isWaiting = true
         sendButton.isEnabled = false
+        newChatButton.isEnabled = false
+
+        renderChat()
 
         thread {
-            var reply = ""
-
-            try {
+            val reply: String = try {
                 val connection =
                     URL(apiUrl).openConnection() as HttpURLConnection
 
-                connection.requestMethod = "POST"
-                connection.connectTimeout = 20000
-                connection.readTimeout = 60000
-                connection.doOutput = true
-                connection.setRequestProperty(
-                    "Content-Type",
-                    "application/json; charset=UTF-8"
-                )
+                try {
+                    connection.requestMethod = "POST"
+                    connection.connectTimeout = 20000
+                    connection.readTimeout = 60000
+                    connection.doOutput = true
 
-                val body = JSONObject()
-                    .put("message", message)
-                    .toString()
-
-                connection.outputStream.use {
-                    it.write(body.toByteArray(Charsets.UTF_8))
-                }
-
-                val status = connection.responseCode
-
-                val stream = if (status in 200..299) {
-                    connection.inputStream
-                } else {
-                    connection.errorStream
-                }
-
-                val response = stream.bufferedReader().use {
-                    it.readText()
-                }
-
-                val json = JSONObject(response)
-
-                reply = if (status in 200..299) {
-                    json.optString(
-                        "reply",
-                        "AI से जवाब नहीं मिला।"
+                    connection.setRequestProperty(
+                        "Content-Type",
+                        "application/json; charset=UTF-8"
                     )
-                } else {
-                    json.optString(
-                        "error",
-                        "सर्वर में समस्या है। दोबारा कोशिश करें।"
+
+                    val body = JSONObject()
+                        .put("message", message)
+                        .toString()
+
+                    connection.outputStream.use { output ->
+                        output.write(body.toByteArray(Charsets.UTF_8))
+                    }
+
+                    val status = connection.responseCode
+
+                    val stream = if (status in 200..299) {
+                        connection.inputStream
+                    } else {
+                        connection.errorStream
+                    }
+
+                    val response = stream?.bufferedReader()?.use {
+                        it.readText()
+                    } ?: ""
+
+                    val json = JSONObject(
+                        response.ifBlank { "{}" }
                     )
+
+                    if (status in 200..299) {
+                        json.optString(
+                            "reply",
+                            "AI से जवाब नहीं मिला।"
+                        )
+                    } else {
+                        val details = json.optString("details", "")
+
+                        when {
+                            details.contains("location", ignoreCase = true) ->
+                                "Google AI की क्षेत्रीय उपलब्धता में समस्या है। कृपया बाद में कोशिश करें।"
+
+                            status == 503 ->
+                                "AI सर्वर अभी व्यस्त है। कुछ देर बाद दोबारा कोशिश करें।"
+
+                            status == 429 ->
+                                "AI की अनुरोध सीमा पूरी हो गई है। कुछ देर बाद कोशिश करें।"
+
+                            details.isNotBlank() ->
+                                "AI सेवा में समस्या है: $details"
+
+                            else ->
+                                json.optString(
+                                    "error",
+                                    "सर्वर में समस्या है। दोबारा कोशिश करें।"
+                                )
+                        }
+                    }
+                } finally {
+                    connection.disconnect()
                 }
-
-                connection.disconnect()
-
             } catch (e: Exception) {
-                reply = "कनेक्शन में समस्या है। इंटरनेट और API जाँचें।"
+                "कनेक्शन में समस्या है। इंटरनेट और API जाँचें।"
             }
 
             runOnUiThread {
-                chatBox.text = chatBox.text.toString()
-                    .replace("🤖 Shriyaan AI: सोच रहा हूँ...", "")
-                    .plus("\n\n🤖 Shriyaan AI: $reply")
+                messages.add(ChatMessage("assistant", reply))
 
+                isWaiting = false
                 sendButton.isEnabled = true
+                newChatButton.isEnabled = true
+
+                saveHistory()
+                renderChat()
             }
         }
     }
