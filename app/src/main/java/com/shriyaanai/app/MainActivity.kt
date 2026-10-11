@@ -4,14 +4,25 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.os.Bundle
 import android.graphics.Color
+import android.graphics.Typeface
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.widget.*
+import android.view.inputmethod.InputMethodManager
+import android.content.Context
+import android.widget.Button
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.TextView
+import android.widget.Toast
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.io.OutputStreamWriter
 import kotlin.concurrent.thread
 
 class MainActivity : Activity() {
@@ -19,715 +30,723 @@ class MainActivity : Activity() {
     private val baseUrl =
         "https://shriyaan-ai-api.tt6914794.workers.dev"
 
-    private val preferences by lazy {
-        getSharedPreferences("shriyaan_chat_history", MODE_PRIVATE)
+    private lateinit var root: LinearLayout
+    private lateinit var content: LinearLayout
+
+    private val prefs by lazy {
+        getSharedPreferences("shriyaan_chat", Context.MODE_PRIVATE)
     }
 
-    private data class ChatMessage(
-        val role: String,
-        val text: String
-    )
-
-    private val messages = mutableListOf<ChatMessage>()
-
-    private lateinit var root: LinearLayout
-    private lateinit var contentFrame: FrameLayout
-    private lateinit var chatButton: Button
-    private lateinit var studioButton: Button
-
-    private var isWaiting = false
-    private var currentScreen = "chat"
-
-    private var topicInput: EditText? = null
-    private var queueContainer: LinearLayout? = null
-    private var queueScroll: ScrollView? = null
-    private var studioMessage: TextView? = null
+    private val chatHistory = mutableListOf<Pair<String, String>>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        window.statusBarColor = Color.rgb(15, 15, 30)
-        window.navigationBarColor = Color.rgb(15, 15, 30)
+        window.statusBarColor = Color.rgb(18, 24, 45)
+        window.navigationBarColor = Color.rgb(18, 24, 45)
 
-        loadHistory()
-
-        root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(14, 10, 14, 10)
-            setBackgroundColor(Color.rgb(15, 15, 30))
-        }
-
-        val header = TextView(this).apply {
-            text = "✨ Shriyaan AI"
-            textSize = 26f
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(6, 12, 6, 12)
-        }
-
-        root.addView(
-            header,
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-        )
-
-        val navigation = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-        }
-
-        chatButton = Button(this).apply {
-            text = "💬 AI Chat"
-            setOnClickListener {
-                showChatScreen()
-            }
-        }
-
-        studioButton = Button(this).apply {
-            text = "🎬 Auto Studio"
-            setOnClickListener {
-                showStudioScreen()
-            }
-        }
-
-        navigation.addView(
-            chatButton,
-            LinearLayout.LayoutParams(0, 52, 1f).apply {
-                marginEnd = 5
-            }
-        )
-
-        navigation.addView(
-            studioButton,
-            LinearLayout.LayoutParams(0, 52, 1f).apply {
-                marginStart = 5
-            }
-        )
-
-        root.addView(navigation)
-
-        contentFrame = FrameLayout(this)
-
-        root.addView(
-            contentFrame,
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                0,
-                1f
-            ).apply {
-                topMargin = 10
-            }
-        )
-
-        setContentView(root)
-
+        createBaseLayout()
         showChatScreen()
     }
 
     // --------------------------------------------------
-    // COMMON UI HELPERS
+    // BASE LAYOUT
     // --------------------------------------------------
 
-    private fun makeText(
-        text: String,
-        size: Float = 15f,
-        color: Int = Color.WHITE
-    ): TextView {
-        return TextView(this).apply {
-            this.text = text
-            textSize = size
-            setTextColor(color)
-            setPadding(10, 8, 10, 8)
-        }
-    }
-
-    private fun makeButton(
-        text: String,
-        action: () -> Unit
-    ): Button {
-        return Button(this).apply {
-            this.text = text
-            setOnClickListener { action() }
-        }
-    }
-
-    private fun setScreen(view: View, screen: String) {
-        currentScreen = screen
-        contentFrame.removeAllViews()
-        contentFrame.addView(
-            view,
-            FrameLayout.LayoutParams(
+    private fun createBaseLayout() {
+        root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.rgb(245, 247, 252))
+            layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
+        }
+
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(18, 18, 18, 12)
+            setBackgroundColor(Color.rgb(18, 24, 45))
+        }
+
+        val title = TextView(this).apply {
+            text = "SHRIYAAN AI"
+            textSize = 25f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.WHITE)
+        }
+
+        val subtitle = TextView(this).apply {
+            text = "Your AI assistant"
+            textSize = 13f
+            setTextColor(Color.LTGRAY)
+        }
+
+        header.addView(title)
+        header.addView(subtitle)
+
+        val navigation = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(10, 8, 10, 8)
+            setBackgroundColor(Color.rgb(30, 38, 65))
+        }
+
+        val chatTab = makeButton("AI Chat") {
+            showChatScreen()
+        }
+
+        val studioTab = makeButton("Auto Studio") {
+            showStudioScreen()
+        }
+
+        navigation.addView(
+            chatTab,
+            LinearLayout.LayoutParams(0, 48, 1f).apply {
+                setMargins(4, 0, 4, 0)
+            }
         )
 
-        chatButton.isEnabled = screen != "chat"
-        studioButton.isEnabled = screen != "studio"
+        navigation.addView(
+            studioTab,
+            LinearLayout.LayoutParams(0, 48, 1f).apply {
+                setMargins(4, 0, 4, 0)
+            }
+        )
+
+        content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(12, 12, 12, 12)
+        }
+
+        val contentScroll = ScrollView(this).apply {
+            isFillViewport = true
+            addView(
+                content,
+                ScrollView.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            )
+        }
+
+        root.addView(header)
+
+        root.addView(navigation)
+
+        root.addView(
+            contentScroll,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        )
+
+        setContentView(root)
     }
 
-    private fun showLoading(message: String) {
-        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+    private fun makeButton(
+        label: String,
+        action: () -> Unit
+    ): Button {
+        return Button(this).apply {
+            text = label
+            textSize = 14f
+            isAllCaps = false
+            setOnClickListener {
+                action()
+            }
+        }
     }
 
-    private fun showError(message: String) {
-        AlertDialog.Builder(this)
-            .setTitle("Shriyaan AI")
-            .setMessage(message)
-            .setPositiveButton("ठीक है", null)
-            .show()
+    private fun addHeading(text: String) {
+        val heading = TextView(this).apply {
+            this.text = text
+            textSize = 21f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.rgb(25, 35, 65))
+            setPadding(4, 8, 4, 12)
+        }
+
+        content.addView(heading)
+    }
+
+    private fun addMessage(
+        label: String,
+        message: String,
+        isUser: Boolean
+    ) {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(14, 12, 14, 12)
+
+            setBackgroundColor(
+                if (isUser) {
+                    Color.rgb(224, 235, 255)
+                } else {
+                    Color.WHITE
+                }
+            )
+        }
+
+        val name = TextView(this).apply {
+            text = label
+            textSize = 13f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.rgb(50, 65, 105))
+        }
+
+        val body = TextView(this).apply {
+            text = message
+            textSize = 15f
+            setTextColor(Color.rgb(30, 35, 45))
+            setPadding(0, 6, 0, 0)
+        }
+
+        card.addView(name)
+        card.addView(body)
+
+        content.addView(
+            card,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(0, 5, 0, 9)
+            }
+        )
+    }
+
+    private fun showToast(message: String) {
+        runOnUiThread {
+            Toast.makeText(
+                this,
+                message,
+                Toast.LENGTH_LONG
+            ).show()
+        }
     }
 
     // --------------------------------------------------
-    // CHAT HISTORY
+    // AI CHAT
     // --------------------------------------------------
 
-    private fun loadHistory() {
-        messages.clear()
+    private fun showChatScreen() {
+        content.removeAllViews()
 
-        val saved = preferences.getString("messages", "[]") ?: "[]"
+        addHeading("AI Chat")
+
+        val info = TextView(this).apply {
+            text = "Shriyaan AI से सवाल पूछें।"
+            textSize = 14f
+            setTextColor(Color.DKGRAY)
+            setPadding(4, 0, 4, 12)
+        }
+
+        content.addView(info)
+
+        val chatArea = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+
+        val historyScroll = ScrollView(this).apply {
+            isFillViewport = true
+            addView(chatArea)
+        }
+
+        content.addView(
+            historyScroll,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        )
+
+        val input = EditText(this).apply {
+            hint = "अपना सवाल यहाँ लिखें..."
+            textSize = 16f
+            minLines = 2
+            maxLines = 5
+            setPadding(12, 10, 12, 10)
+            setBackgroundColor(Color.WHITE)
+        }
+
+        content.addView(
+            input,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(0, 8, 0, 6)
+            }
+        )
+
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+
+        val newChat = makeButton("New Chat") {
+            chatHistory.clear()
+            prefs.edit().remove("history").apply()
+            chatArea.removeAllViews()
+            input.setText("")
+            showToast("नई चैट शुरू हो गई।")
+        }
+
+        val send = makeButton("Send ➤") {
+            // Button click action is set below.
+        }
+
+        send.setOnClickListener {
+            val message = input.text.toString().trim()
+
+            if (message.isEmpty()) {
+                showToast("पहले अपना सवाल लिखें।")
+            } else {
+                sendChatMessage(
+                    message,
+                    input,
+                    send,
+                    chatArea,
+                    historyScroll
+                )
+            }
+        }
+
+        actions.addView(
+            newChat,
+            LinearLayout.LayoutParams(0, 50, 1f)
+        )
+
+        actions.addView(
+            send,
+            LinearLayout.LayoutParams(0, 50, 1f)
+        )
+
+        content.addView(actions)
+
+        loadSavedHistory(chatArea)
+    }
+
+    private fun sendChatMessage(
+        message: String,
+        input: EditText,
+        sendButton: Button,
+        chatArea: LinearLayout,
+        historyScroll: ScrollView
+    ) {
+        input.setText("")
+        input.isEnabled = false
+        sendButton.isEnabled = false
+
+        hideKeyboard(input)
+
+        val userCard = createChatCard(
+            "आप",
+            message,
+            true
+        )
+
+        chatArea.addView(userCard)
+
+        val loading = createChatCard(
+            "Shriyaan AI",
+            "जवाब तैयार हो रहा है...",
+            false
+        )
+
+        chatArea.addView(loading)
+
+        historyScroll.post {
+            historyScroll.fullScroll(View.FOCUS_DOWN)
+        }
+
+        thread {
+            try {
+                val body = JSONObject().apply {
+                    put("message", message)
+                }
+
+                val response = request(
+                    "/chat",
+                    "POST",
+                    body
+                )
+
+                val answer = extractChatAnswer(response)
+
+                runOnUiThread {
+                    chatArea.removeView(loading)
+
+                    chatArea.addView(
+                        createChatCard(
+                            "Shriyaan AI",
+                            answer,
+                            false
+                        )
+                    )
+
+                    chatHistory.add(
+                        Pair(message, answer)
+                    )
+
+                    saveHistory()
+
+                    input.isEnabled = true
+                    sendButton.isEnabled = true
+
+                    historyScroll.post {
+                        historyScroll.fullScroll(
+                            View.FOCUS_DOWN
+                        )
+                    }
+                }
+
+            } catch (e: Exception) {
+                runOnUiThread {
+                    chatArea.removeView(loading)
+
+                    chatArea.addView(
+                        createChatCard(
+                            "Error",
+                            errorMessage(e),
+                            false
+                        )
+                    )
+
+                    input.isEnabled = true
+                    sendButton.isEnabled = true
+
+                    historyScroll.post {
+                        historyScroll.fullScroll(
+                            View.FOCUS_DOWN
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private fun createChatCard(
+        label: String,
+        message: String,
+        isUser: Boolean
+    ): View {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(12, 10, 12, 10)
+
+            setBackgroundColor(
+                if (isUser) {
+                    Color.rgb(224, 235, 255)
+                } else {
+                    Color.WHITE
+                }
+            )
+        }
+
+        val title = TextView(this).apply {
+            text = label
+            textSize = 13f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.rgb(45, 60, 105))
+        }
+
+        val body = TextView(this).apply {
+            text = message
+            textSize = 15f
+            setTextColor(Color.rgb(30, 35, 45))
+            setPadding(0, 5, 0, 0)
+        }
+
+        card.addView(title)
+        card.addView(body)
+
+        card.layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply {
+            setMargins(0, 4, 0, 8)
+        }
+
+        return card
+    }
+
+    private fun extractChatAnswer(
+        response: JSONObject
+    ): String {
+        val candidates = response.optJSONArray("candidates")
+
+        if (candidates != null && candidates.length() > 0) {
+            val candidate = candidates.optJSONObject(0)
+            val contentObject = candidate?.optJSONObject("content")
+            val parts = contentObject?.optJSONArray("parts")
+
+            if (parts != null) {
+                val result = StringBuilder()
+
+                for (i in 0 until parts.length()) {
+                    val part = parts.optJSONObject(i)
+                    val text = part?.optString("text", "") ?: ""
+
+                    if (text.isNotBlank()) {
+                        if (result.isNotEmpty()) {
+                            result.append("\n")
+                        }
+                        result.append(text)
+                    }
+                }
+
+                if (result.isNotEmpty()) {
+                    return result.toString()
+                }
+            }
+        }
+
+        val possibleKeys = listOf(
+            "reply",
+            "response",
+            "answer",
+            "text",
+            "message"
+        )
+
+        for (key in possibleKeys) {
+            val value = response.optString(key, "")
+            if (value.isNotBlank() && value != "null") {
+                return value
+            }
+        }
+
+        return response.toString(2)
+    }
+
+    private fun loadSavedHistory(
+        chatArea: LinearLayout
+    ) {
+        val saved = prefs.getString("history", null)
+            ?: return
 
         try {
             val array = JSONArray(saved)
 
             for (i in 0 until array.length()) {
-                val item = array.getJSONObject(i)
+                val item = array.optJSONObject(i) ?: continue
 
-                messages.add(
-                    ChatMessage(
-                        role = item.optString("role", "user"),
-                        text = item.optString("text", "")
+                val question = item.optString("question", "")
+                val answer = item.optString("answer", "")
+
+                chatArea.addView(
+                    createChatCard(
+                        "आप",
+                        question,
+                        true
+                    )
+                )
+
+                chatArea.addView(
+                    createChatCard(
+                        "Shriyaan AI",
+                        answer,
+                        false
                     )
                 )
             }
         } catch (_: Exception) {
-            messages.clear()
+            prefs.edit().remove("history").apply()
         }
     }
 
     private fun saveHistory() {
         val array = JSONArray()
 
-        messages.forEach {
+        for (item in chatHistory) {
             array.put(
-                JSONObject()
-                    .put("role", it.role)
-                    .put("text", it.text)
+                JSONObject().apply {
+                    put("question", item.first)
+                    put("answer", item.second)
+                }
             )
         }
 
-        preferences.edit()
-            .putString("messages", array.toString())
+        prefs.edit()
+            .putString("history", array.toString())
             .apply()
     }
 
-    // --------------------------------------------------
-    // AI CHAT SCREEN
-    // --------------------------------------------------
+    private fun hideKeyboard(view: View) {
+        try {
+            val manager = getSystemService(
+                Context.INPUT_METHOD_SERVICE
+            ) as InputMethodManager
 
-    private fun showChatScreen() {
-        val screen = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.rgb(22, 22, 40))
-            setPadding(8, 8, 8, 8)
-        }
-
-        val chatScroll = ScrollView(this)
-
-        val chatText = TextView(this).apply {
-            textSize = 16f
-            setTextColor(Color.WHITE)
-            setPadding(12, 12, 12, 12)
-            setTextIsSelectable(true)
-        }
-
-        chatScroll.addView(chatText)
-
-        val input = EditText(this).apply {
-            hint = "यहाँ अपना सवाल लिखें..."
-            setHintTextColor(Color.LTGRAY)
-            setTextColor(Color.WHITE)
-            textSize = 16f
-            setPadding(12, 8, 12, 8)
-            setBackgroundColor(Color.rgb(40, 40, 60))
-            minLines = 1
-            maxLines = 4
-        }
-
-        val buttons = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-
-        val newChat = makeButton("＋ नई चैट") {
-            if (isWaiting) {
-                showLoading("पहले जवाब आने दें।")
-            } else {
-                messages.clear()
-                saveHistory()
-                renderChat(chatText, false)
-            }
-        }
-
-        val send = makeButton("Send ➤") {
-            sendChatMessage(input, send, newChat, chatText)
-        }
-
-        buttons.addView(
-            newChat,
-            LinearLayout.LayoutParams(0, 54, 1f)
-        )
-
-        buttons.addView(
-            send,
-            LinearLayout.LayoutParams(0, 54, 1f)
-        )
-
-        screen.addView(
-            chatScroll,
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                0,
-                1f
+            manager.hideSoftInputFromWindow(
+                view.windowToken,
+                0
             )
-        )
-
-        screen.addView(input)
-
-        screen.addView(buttons)
-
-        setScreen(screen, "chat")
-
-        renderChat(chatText, false)
-
-        chatScroll.post {
-            chatScroll.fullScroll(View.FOCUS_DOWN)
-        }
-    }
-
-    private fun renderChat(
-        chatText: TextView,
-        waiting: Boolean
-    ) {
-        val result = StringBuilder()
-
-        if (messages.isEmpty()) {
-            result.append(
-                "Shriyaan AI में आपका स्वागत है! 👋\n\n" +
-                "अपना सवाल नीचे लिखें।"
-            )
-        } else {
-            messages.forEach {
-                if (it.role == "user") {
-                    result.append("🧑 आप:\n")
-                } else {
-                    result.append("🤖 Shriyaan AI:\n")
-                }
-
-                result.append(it.text)
-                result.append("\n\n")
-            }
-        }
-
-        if (waiting) {
-            result.append("🤖 Shriyaan AI जवाब तैयार कर रहा है...")
-        }
-
-        chatText.text = result.toString()
-    }
-
-    private fun sendChatMessage(
-        input: EditText,
-        send: Button,
-        newChat: Button,
-        chatText: TextView
-    ) {
-        val message = input.text.toString().trim()
-
-        if (message.isEmpty()) {
-            showLoading("पहले अपना सवाल लिखें।")
-            return
-        }
-
-        if (isWaiting) return
-
-        messages.add(ChatMessage("user", message))
-        saveHistory()
-        input.text.clear()
-
-        isWaiting = true
-        send.isEnabled = false
-        newChat.isEnabled = false
-
-        renderChat(chatText, true)
-
-        thread {
-            val result = request(
-                path = "/chat",
-                method = "POST",
-                body = JSONObject().put("message", message)
-            )
-
-            val reply = if (result.first in 200..299) {
-                try {
-                    JSONObject(result.second).optString(
-                        "reply",
-                        "AI से जवाब नहीं मिला।"
-                    )
-                } catch (_: Exception) {
-                    "AI का जवाब पढ़ने में समस्या हुई।"
-                }
-            } else {
-                errorMessage(result.first, result.second)
-            }
-
-            runOnUiThread {
-                messages.add(ChatMessage("assistant", reply))
-                saveHistory()
-
-                isWaiting = false
-                send.isEnabled = true
-                newChat.isEnabled = true
-
-                renderChat(chatText, false)
-            }
+        } catch (_: Exception) {
         }
     }
 
     // --------------------------------------------------
-    // AUTO STUDIO SCREEN
+    // AUTO STUDIO
     // --------------------------------------------------
 
     private fun showStudioScreen() {
-        val screen = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(8, 8, 8, 8)
-            setBackgroundColor(Color.rgb(22, 22, 40))
+        content.removeAllViews()
+
+        addHeading("Auto Studio")
+
+        val description = TextView(this).apply {
+            text = "AI वीडियो स्क्रिप्ट तैयार करें और अपनी Queue देखें।"
+            textSize = 14f
+            setTextColor(Color.DKGRAY)
         }
 
-        screen.addView(
-            makeText("🎬 Shriyaan AI Auto Studio", 22f)
-        )
+        content.addView(description)
 
-        screen.addView(
-            makeText(
-                "हिंदी YouTube Shorts के लिए Scripts तैयार करें।",
-                14f,
-                Color.LTGRAY
-            )
-        )
-
-        screen.addView(makeText("वीडियो का विषय:", 15f))
-
-        val topic = EditText(this).apply {
-            hint = "राजस्थान का इतिहास और रोचक तथ्य"
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.LTGRAY)
-            setPadding(12, 8, 12, 8)
-            setBackgroundColor(Color.rgb(40, 40, 60))
-            setText("राजस्थान का इतिहास और रोचक तथ्य")
-            minLines = 2
-            maxLines = 3
-        }
-
-        topicInput = topic
-        screen.addView(topic)
-
-        val actionRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-        }
-
-        val generateButton = makeButton("✨ Generate Script") {
+        val generateButton = makeButton(
+            "Generate New Script"
+        ) {
             generateScript()
         }
 
-        val refreshButton = makeButton("↻ Queue Refresh") {
+        content.addView(
+            generateButton,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                52
+            ).apply {
+                setMargins(0, 12, 0, 8)
+            }
+        )
+
+        val refreshButton = makeButton(
+            "Refresh Queue"
+        ) {
             loadQueue()
         }
 
-        actionRow.addView(
-            generateButton,
-            LinearLayout.LayoutParams(0, 56, 1f)
-        )
-
-        actionRow.addView(
+        content.addView(
             refreshButton,
-            LinearLayout.LayoutParams(0, 56, 1f)
-        )
-
-        screen.addView(actionRow)
-
-        studioMessage = makeText(
-            "Queue लोड की जा रही है...",
-            14f,
-            Color.LTGRAY
-        )
-
-        screen.addView(studioMessage)
-
-        queueScroll = ScrollView(this)
-
-        queueContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(2, 4, 2, 12)
-        }
-
-        queueScroll!!.addView(queueContainer)
-
-        screen.addView(
-            queueScroll,
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                0,
-                1f
-            )
+                48
+            ).apply {
+                setMargins(0, 0, 0, 12)
+            }
         )
 
-        setScreen(screen, "studio")
+        val statusText = TextView(this).apply {
+            text = "Studio status लोड हो रहा है..."
+            textSize = 14f
+            setTextColor(Color.DKGRAY)
+            setPadding(4, 4, 4, 10)
+        }
 
-        loadQueue()
+        content.addView(statusText)
+
+        val queueHeading = TextView(this).apply {
+            text = "Script Queue"
+            textSize = 19f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.rgb(25, 35, 65))
+            setPadding(4, 12, 4, 8)
+        }
+
+        content.addView(queueHeading)
+
+        val queueContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+
+        content.addView(queueContainer)
+
+        loadStudioStatus(statusText)
+        loadQueueInto(queueContainer)
     }
-
-    // --------------------------------------------------
-    // GENERATE SCRIPT
-    // --------------------------------------------------
 
     private fun generateScript() {
-        if (isWaiting) {
-            showLoading("एक अनुरोध पहले से चल रहा है।")
-            return
-        }
+        AlertDialog.Builder(this)
+            .setTitle("Generate Script")
+            .setMessage(
+                "क्या आप Auto Studio के मौजूदा सेटिंग्स के अनुसार नई स्क्रिप्ट बनाना चाहते हैं?"
+            )
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Generate") { _, _ ->
+                runGenerateRequest()
+            }
+            .show()
+    }
 
-        val topic = topicInput?.text?.toString()?.trim().orEmpty()
-
-        if (topic.isBlank()) {
-            showError("कृपया वीडियो का विषय लिखें।")
-            return
-        }
-
-        isWaiting = true
-        studioMessage?.text = "AI नई Script बना रहा है..."
+    private fun runGenerateRequest() {
+        showToast("स्क्रिप्ट बनाई जा रही है...")
 
         thread {
-            val result = request(
-                path = "/studio/generate",
-                method = "POST",
-                body = JSONObject().put("topic", topic)
-            )
+            try {
+                val response = request(
+                    "/studio/generate",
+                    "POST",
+                    JSONObject()
+                )
 
-            runOnUiThread {
-                isWaiting = false
-
-                if (result.first in 200..299) {
-                    try {
-                        val json = JSONObject(result.second)
-
-                        if (json.optBoolean("success", false)) {
-                            val item = json.optJSONObject("item")
-
-                            val title = item?.optString(
-                                "title",
-                                "नई Script"
-                            ) ?: "नई Script"
-
-                            studioMessage?.text =
-                                "✅ Script तैयार: $title"
-
-                            showLoading("Script तैयार हो गई!")
-
-                            loadQueue()
-                        } else {
-                            studioMessage?.text =
-                                "Script नहीं बन पाई।"
-
-                            showError(
-                                json.optString(
-                                    "message",
-                                    "AI Script बनाने में समस्या हुई।"
-                                )
-                            )
-                        }
-                    } catch (_: Exception) {
-                        showError("सर्वर का जवाब पढ़ा नहीं जा सका।")
-                    }
-                } else {
-                    val message = errorMessage(
-                        result.first,
-                        result.second
+                runOnUiThread {
+                    showResponseDialog(
+                        "Generate Result",
+                        response
                     )
 
-                    studioMessage?.text = message
-                    showError(message)
+                    showStudioScreen()
                 }
+
+            } catch (e: Exception) {
+                showToast(errorMessage(e))
             }
         }
     }
 
-    // --------------------------------------------------
-    // LOAD QUEUE
-    // --------------------------------------------------
-
-    private fun loadQueue() {
-        if (currentScreen != "studio") return
-
-        studioMessage?.text = "Queue लोड हो रही है..."
-
-        thread {
-            val result = request(
-                path = "/studio/queue",
-                method = "GET"
-            )
-
-            runOnUiThread {
-                if (currentScreen != "studio") return@runOnUiThread
-
-                val container = queueContainer ?: return@runOnUiThread
-                container.removeAllViews()
-
-                if (result.first !in 200..299) {
-                    studioMessage?.text =
-                        errorMessage(result.first, result.second)
-
-                    container.addView(
-                        makeText(
-                            "Queue लोड नहीं हो पाई। Refresh दबाकर दोबारा कोशिश करें।"
-                        )
-                    )
-                    return@runOnUiThread
-                }
-
-                try {
-                    val json = JSONObject(result.second)
-
-                    if (!json.optBoolean("success", false)) {
-                        studioMessage?.text = "Queue उपलब्ध नहीं है।"
-                        return@runOnUiThread
-                    }
-
-                    val items = json.optJSONArray("items") ?: JSONArray()
-
-                    studioMessage?.text =
-                        "📚 Queue में ${items.length()} Scripts"
-
-                    if (items.length() == 0) {
-                        container.addView(
-                            makeText(
-                                "अभी Queue खाली है।\n\n" +
-                                "पहली Script बनाने के लिए ऊपर " +
-                                "Generate Script दबाएँ।",
-                                16f
-                            )
-                        )
-                        return@runOnUiThread
-                    }
-
-                    for (i in 0 until items.length()) {
-                        val item = items.optJSONObject(i) ?: continue
-                        addQueueCard(container, item)
-                    }
-
-                } catch (_: Exception) {
-                    studioMessage?.text = "Queue का डेटा पढ़ने में समस्या हुई।"
-                }
-            }
-        }
-    }
-
-    // --------------------------------------------------
-    // QUEUE CARD
-    // --------------------------------------------------
-
-    private fun addQueueCard(
-        container: LinearLayout,
-        item: JSONObject
+    private fun loadStudioStatus(
+        statusText: TextView
     ) {
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(10, 10, 10, 10)
-            setBackgroundColor(Color.rgb(35, 35, 57))
-        }
+        thread {
+            try {
+                val response = request(
+                    "/studio/status",
+                    "GET"
+                )
 
-        val id = item.optString("id", "")
+                runOnUiThread {
+                    val settings = response.optJSONObject("settings")
+                    val topic = settings?.optString(
+                        "topic",
+                        "Not set"
+                    ) ?: "Not set"
 
-        val title = item.optString("title", "बिना शीर्षक की Script")
-        val topic = item.optString("topic", "")
-        val script = item.optString("script", "")
-        val hook = item.optString("hook", "")
-        val status = item.optString("status", "pending")
-        val duration = item.optInt("durationSeconds", 45)
+                    val language = settings?.optString(
+                        "language",
+                        "Hindi"
+                    ) ?: "Hindi"
 
-        card.addView(makeText(title, 18f))
+                    val platform = settings?.optString(
+                        "platform",
+                        "YouTube Shorts"
+                    ) ?: "YouTube Shorts"
 
-        card.addView(
-            makeText(
-                "विषय: $topic\n" +
-                "स्थिति: ${statusHindi(status)}\n" +
-                "अवधि: $duration सेकंड",
-                13f,
-                Color.LTGRAY
-            )
-        )
+                    val videos = settings?.optInt(
+                        "videosPerDay",
+                        1
+                    ) ?: 1
 
-        if (hook.isNotBlank()) {
-            card.addView(
-                makeText("🎯 Hook:\n$hook", 14f)
-            )
-        }
+                    val duration = settings?.optInt(
+                        "durationSeconds",
+                        45
+                    ) ?: 45
 
-        val preview = if (script.length > 450) {
-            script.take(450) + "…"
-        } else {
-            script
-        }
-
-        card.addView(
-            makeText(
-                if (preview.isBlank()) {
-                    "Script का टेक्स्ट उपलब्ध नहीं है।"
-                } else {
-                    "📝 Script:\n$preview"
-                },
-                14f
-            )
-        )
-
-        val detailsButton = makeButton("पूरी Script / Scenes देखें") {
-            showScriptDetails(item)
-        }
-
-        card.addView(detailsButton)
-
-        val actionRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-        }
-
-        val approveButton = makeButton("✅ Approve") {
-            reviewScript(
-                id,
-                "approved",
-                "मंजूर"
-            )
-        }
-
-        val reviseButton = makeButton("✏️ Revise") {
-            showRevisionDialog(id)
-        }
-
-        val rejectButton = makeButton("❌ Reject") {
-            confirmReject(id)
-        }
-
-        actionRow.addView(
-            approveButton,
-            LinearLayout.LayoutParams(0, 52, 1f)
-        )
-
-        actionRow.addView(
-            reviseButton,
-            LinearLayout.LayoutParams(0, 52, 1f)
-        )
-
-        actionRow.addView(
-            
+                    statusText.text =
+                        "Topic: $topic\n" +
+                        "Language: $language\n" +
+                        "Platform: $platform\n" +
+                        "Videos per day: $videos\n" +
+                        "Duration: $duration seconds\n" +
+                        "Status: ${response.optString("status", "Available")}"
